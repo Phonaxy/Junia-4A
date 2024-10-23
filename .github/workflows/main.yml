@@ -1,0 +1,70 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  # Job 1: Lint PHP files
+  lint:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        
+      - name: Run PHP Lint
+        run: |
+          for file in $(find . -name "*.php"); do
+            php -l $file
+          done
+
+  # Job 2: Build Docker image
+  build:
+    runs-on: self-hosted
+    needs: lint
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        
+      - name: Build Docker Image
+        run: docker build -t mysite-image:latest .
+
+  # Job 3: Push Docker image to Docker Hub
+  push:
+    runs-on: self-hosted
+    needs: build
+    steps:
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Push Docker Image
+        run: docker push mysite-image:latest
+
+  # Job 4: Deploy to server using SSH
+  deploy:
+    runs-on: self-hosted
+    needs: push
+    steps:
+      - name: Deploy to Server
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh -o StrictHostKeyChecking=no user@your-server-ip << 'EOF'
+            docker pull mysite-image:latest
+            docker-compose up -d
+          EOF
+
+  # Job 5: Push Docker image to Docker Hub (optional parallel job)
+  push-dockerhub:
+    runs-on: self-hosted
+    needs: build
+    steps:
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Push Docker Image
+        run: docker push mysite-image:latest
